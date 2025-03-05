@@ -150,7 +150,7 @@ export class VADStream extends baseStream {
       let speechThresholdDuration = 0;
       let silenceThresholdDuration = 0;
 
-      let inputFrames = [];
+      let inputFrames: AudioFrame[] = [];
       let inferenceFrames: AudioFrame[] = [];
       let resampler: AudioResampler | null = null;
 

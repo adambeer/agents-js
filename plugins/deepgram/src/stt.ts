@@ -107,12 +107,14 @@ export class SpeechStream extends stt.SpeechStream {
   #logger = log();
   #speaking = false;
   label = 'deepgram.SpeechStream';
+  #ws: WebSocket | null;
 
   constructor(stt: STT, opts: STTOptions) {
     super(stt);
     this.#opts = opts;
     this.closed = false;
     this.#audioEnergyFilter = new AudioEnergyFilter();
+    this.#ws = null;
 
     this.#run();
   }
@@ -154,6 +156,7 @@ export class SpeechStream extends stt.SpeechStream {
       ws = new WebSocket(streamURL, {
         headers: { Authorization: `Token ${this.#opts.apiKey}` },
       });
+      this.#ws = ws;
 
       try {
         await new Promise((resolve, reject) => {
@@ -241,6 +244,9 @@ export class SpeechStream extends stt.SpeechStream {
             ws.once('message', (data) => resolve(data));
           }).then((msg) => {
             const json = JSON.parse(msg.toString());
+            if(json['from_finalize']) {
+              console.log("deepgram json", json)
+            }
             switch (json['type']) {
               case 'SpeechStarted': {
                 // This is a normal case. Deepgram's SpeechStarted events
@@ -273,11 +279,13 @@ export class SpeechStream extends stt.SpeechStream {
                   if (isFinal) {
                     this.queue.put({
                       type: stt.SpeechEventType.FINAL_TRANSCRIPT,
+                      from_finalize: json['from_finalize'],
                       alternatives: [alternatives[0], ...alternatives.slice(1)],
                     });
                   } else {
                     this.queue.put({
                       type: stt.SpeechEventType.INTERIM_TRANSCRIPT,
+                      from_finalize: json['from_finalize'],
                       alternatives: [alternatives[0], ...alternatives.slice(1)],
                     });
                   }
@@ -311,6 +319,16 @@ export class SpeechStream extends stt.SpeechStream {
 
     await Promise.all([sendTask(), listenTask(), wsMonitor]);
     clearInterval(keepalive);
+  }
+
+  sendFinalizedMessage() {
+    try {
+      this.#ws?.send(JSON.stringify({ type: 'Finalize' }));
+      console.log('Finalize');
+    } catch(e) {
+      console.log("sendFinalizedMessage CATCH", e)
+      return;
+    }
   }
 }
 
