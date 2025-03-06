@@ -5,6 +5,8 @@ import { type AudioBuffer, mergeFrames, stt } from '@livekit/agents';
 import type { AudioFrame } from '@livekit/rtc-node';
 import { OpenAI } from 'openai';
 import type { GroqAudioModels, WhisperModels } from './models.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface STTOptions {
   apiKey?: string;
@@ -88,11 +90,11 @@ export class STT extends stt.STT {
     }
   }
 
-  #createWav(frame: AudioFrame): Buffer {
+  #createWav(frame: AudioFrame, saveFile: boolean = false): Buffer {
     const bitsPerSample = 16;
     const byteRate = (frame.sampleRate * frame.channels * bitsPerSample) / 8;
     const blockAlign = (frame.channels * bitsPerSample) / 8;
-
+  
     const header = Buffer.alloc(44);
     header.write('RIFF', 0);
     header.writeUInt32LE(36 + frame.data.byteLength, 4);
@@ -107,13 +109,35 @@ export class STT extends stt.STT {
     header.writeUInt16LE(16, 34);
     header.write('data', 36);
     header.writeUInt32LE(frame.data.byteLength, 40);
-    return Buffer.concat([header, Buffer.from(frame.data.buffer)]);
+    
+    const wavBuffer = Buffer.concat([header, Buffer.from(frame.data.buffer)]);
+    
+    // Save the WAV file if requested
+    if (saveFile) {
+      
+      // Generate filename based on current date and time
+      const now = new Date();
+      const timestamp = now.toISOString()
+        .replace(/:/g, '-')  // Replace colons with hyphens (for Windows compatibility)
+        .replace(/\..+/, '')  // Remove milliseconds
+        .replace('T', '_');   // Replace T with underscore for readability
+      
+      const filename = `recording_${timestamp}.wav`;
+      
+      // Save in project root directory
+      const filePath = path.join(process.cwd(), filename);
+      
+      fs.writeFileSync(filePath, wavBuffer);
+      console.log(`WAV file saved to: ${filePath}`);
+    }
+    
+    return wavBuffer;
   }
 
   async _recognize(buffer: AudioBuffer, language?: string): Promise<stt.SpeechEvent> {
     const config = this.#sanitizeOptions(language);
     buffer = mergeFrames(buffer);
-    const file = new File([this.#createWav(buffer)], 'audio.wav', { type: 'audio/wav' });
+    const file = new File([this.#createWav(buffer, true)], 'audio.wav', { type: 'audio/wav' });
     const resp = await this.#client.audio.transcriptions.create({
       file,
       model: this.#opts.model,
