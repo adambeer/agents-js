@@ -154,6 +154,7 @@ export class WorkerOptions {
   agentName: string;
   workerType: JobType;
   maxRetry: number;
+  canReconnect: boolean;
   wsURL: string;
   apiKey?: string;
   apiSecret?: string;
@@ -177,6 +178,7 @@ export class WorkerOptions {
     agentName = '',
     workerType = JobType.JT_ROOM,
     maxRetry = MAX_RECONNECT_ATTEMPTS,
+    canReconnect = true,
     wsURL = 'ws://localhost:7880',
     apiKey = undefined,
     apiSecret = undefined,
@@ -204,6 +206,7 @@ export class WorkerOptions {
     agentName?: string;
     workerType?: JobType;
     maxRetry?: number;
+    canReconnect?: boolean,
     wsURL?: string;
     apiKey?: string;
     apiSecret?: string;
@@ -228,6 +231,7 @@ export class WorkerOptions {
     this.agentName = agentName;
     this.workerType = workerType;
     this.maxRetry = maxRetry;
+    this.canReconnect = canReconnect;
     this.wsURL = wsURL;
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
@@ -486,7 +490,13 @@ export class Worker {
     ws.addEventListener('close', () => {
       closingWS = true;
       this.#logger.error('worker connection closed unexpectedly');
-      this.close();
+      if(this.#opts.canReconnect) {
+        this.#logger.info('Attempting to reconnect after cleaning up...');
+        this.close(true);
+      }
+      else {
+        this.close(false);
+      }
     });
 
     ws.addEventListener('message', (event) => {
@@ -700,7 +710,7 @@ export class Worker {
     await proc.close();
   }
 
-  async close() {
+  async close(reconnect: boolean) {
     if (this.#closed) {
       await this.#close.await;
       return;
@@ -717,5 +727,9 @@ export class Worker {
 
     this.#session?.close();
     await this.#close.await;
+
+    if(reconnect) {
+      this.run();
+    }
   }
 }
